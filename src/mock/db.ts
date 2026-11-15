@@ -30,7 +30,11 @@ export interface Archive {
   no_disturbance?: boolean
   /** Jumedia: kept out of the TV home feed (`/x/v2/feed/index`). */
   no_tv?: boolean
+  /** Jumedia 联合创作: participants in display order, the uploader excluded. Absent or empty for a solo archive. */
+  staff?: ArchiveStaff[]
 }
+/** A co-creation participant; `title` is the role shown with the name (empty means 参与创作). */
+export interface ArchiveStaff { mid: number; title: string }
 /**
  * Link from a Jumedia record to the data-source item it mirrors. `meta` is the
  * metadata the last sync derived from Emby; fields listed in `locked` were

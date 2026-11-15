@@ -97,6 +97,7 @@ export default function Video() {
     }
   }
   const card = detail.data?.Card
+  const staff: Staff[] = view.staff ?? []
 
   return (
     <div className="watch">
@@ -130,7 +131,7 @@ export default function Video() {
       </div>
 
       <aside>
-        <div className="up-box">
+        {staff.length > 1 ? <StaffBox key={view.aid} staff={staff} ownerMid={view.owner.mid} ownerFollowing={!!card?.following} /> : <div className="up-box">
           <div className="row" style={{ gap: 12 }}>
             <Link to={`/space/${view.owner.mid}`} style={{ flex: 'none' }}><Avatar src={view.owner.face} size={48} /></Link>
             <div className="stack" style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -140,7 +141,7 @@ export default function Video() {
             </div>
           </div>
           {me?.mid !== view.owner.mid && <button type="button" className={`up-follow ${rel.follow ? 'on' : ''}`} onClick={toggleFollow}>{rel.follow ? '已关注' : <><Icon name="plus" size={15} />关注</>}</button>}
-        </div>
+        </div>}
 
         {pages.length > 1 && (
           <div className="side-box">
@@ -169,6 +170,46 @@ export default function Video() {
 
       {modal === 'coin' && <CoinModal aid={view.aid} onClose={() => setModal('')} onDone={(n, liked) => { setRel((r) => ({ ...r, coin: r.coin + n, like: r.like || liked })); setStat((s) => ({ ...s, coin: s.coin + n, like: s.like + (liked && !rel.like ? 1 : 0) })) }} />}
       {modal === 'fav' && me && <FavModal aid={view.aid} mid={me.mid} onClose={() => setModal('')} onDone={(fav, delta) => { setRel((r) => ({ ...r, fav })); setStat((s) => ({ ...s, favorite: s.favorite + delta })) }} />}
+    </div>
+  )
+}
+
+interface Staff { mid: number; title: string; name: string; face: string }
+
+/** 联合创作: every creator with their role and a follow button; the uploader comes first. */
+function StaffBox({ staff, ownerMid, ownerFollowing }: { staff: Staff[]; ownerMid: number; ownerFollowing: boolean }) {
+  const { me } = useSession()
+  const nav = useNavigate()
+  const [follow, setFollow] = useState<Record<number, boolean>>({ [ownerMid]: ownerFollowing })
+  useEffect(() => {
+    if (!me) return
+    let live = true
+    for (const s of staff) {
+      if (s.mid === ownerMid || s.mid === me.mid) continue
+      juli.accRelation(s.mid).then((d) => { if (live) setFollow((f) => ({ ...f, [s.mid]: [2, 6].includes(d?.relation?.attribute) })) }).catch(() => {})
+    }
+    return () => { live = false }
+  }, [me?.mid]) // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = async (mid: number) => {
+    if (!me) { toast('请先登录', 'error'); nav('/login'); return }
+    const on = !follow[mid]
+    try { await juli.relationModify(mid, on); setFollow((f) => ({ ...f, [mid]: on })); toast(on ? '关注成功' : '已取消关注', 'success') } catch (e) { toastError(e) }
+  }
+  return (
+    <div className="up-box staff-box">
+      <div className="row between"><span style={{ fontSize: 15, fontWeight: 700 }}>创作团队</span><span className="faint" style={{ fontSize: 12 }}>{staff.length} 位创作者</span></div>
+      <ul className="staff-list">
+        {staff.map((s) => (
+          <li key={s.mid}>
+            <Link to={`/space/${s.mid}`} style={{ flex: 'none' }}><Avatar src={s.face} size={40} /></Link>
+            <span className="stack" style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Link to={`/space/${s.mid}`} className="clamp-1" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{s.name}</Link>
+              <span className="staff-role">{s.title}</span>
+            </span>
+            {me?.mid !== s.mid && <button type="button" className={`up-follow sm ${follow[s.mid] ? 'on' : ''}`} onClick={() => toggle(s.mid)}>{follow[s.mid] ? '已关注' : <><Icon name="plus" size={13} />关注</>}</button>}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

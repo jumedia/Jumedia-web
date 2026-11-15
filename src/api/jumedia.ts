@@ -46,8 +46,10 @@ export type ArchiveForm = {
   season_id?: number; videos: { filename: string; title: string; duration: number }[]; chapters?: { from: number; to: number; content: string }[]
   /** Scheduled publish time (unix seconds, 0 = publish on approval); `draft` saves without submitting. */
   dtime?: number; draft?: number; no_disturbance?: number; no_tv?: number
+  /** 联合创作 participants in display order, the uploader excluded; omitted keeps the saved list. */
+  staff?: { mid: number; title: string }[]
 }
-export const archiveSubmit = (f: ArchiveForm) => post('api', f.aid ? '/x/vu/web/edit' : '/x/vu/web/add/v3', { ...csrf(), ...f, videos: JSON.stringify(f.videos), chapters: JSON.stringify(f.chapters ?? []) })
+export const archiveSubmit = (f: ArchiveForm) => post('api', f.aid ? '/x/vu/web/edit' : '/x/vu/web/add/v3', { ...csrf(), ...f, videos: JSON.stringify(f.videos), chapters: JSON.stringify(f.chapters ?? []), staff: f.staff && JSON.stringify(f.staff) })
 export const creatorArchives = (p: { pn: number; ps?: number; status?: string; keyword?: string; origin?: '' | 'upload' | 'datasource' }) => data('api', '/x/web/archives', { ps: 10, ...p })
 /** Restores upstream metadata on a data-source archive (all locked fields when `fields` is omitted). */
 export const archiveOriginReset = (aid: number, fields?: string[]) => post('api', '/x/web/archive/origin/reset', { ...csrf(), aid, fields: fields?.join(',') })

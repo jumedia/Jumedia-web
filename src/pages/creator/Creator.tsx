@@ -9,7 +9,7 @@ import { DataSourceImport } from '../../components/DataSourceImport'
 import { CacheStatus, cacheBusy, StreamSourceEditor } from '../../components/StreamSource'
 import { Icon } from '../../components/Icon'
 import { ConsoleFrame, ConsoleNav } from '../../components/Layout'
-import { confirmDialog, Empty, ErrorState, Loading, Modal, Pager, Spinner, Switch, toast, toastError } from '../../components/ui'
+import { Avatar, confirmDialog, Empty, ErrorState, Loading, Modal, Pager, Spinner, Switch, toast, toastError } from '../../components/ui'
 import { useAsync, useTitle } from '../../lib/hooks'
 import { useSession } from '../../lib/session'
 
@@ -169,6 +169,7 @@ function UploadForm() {
   const addTag = (t: string) => { const v = t.trim(); setTagDraft(''); if (v && !tags.includes(v) && tags.length < 10) setTags([...tags, v]) }
   const [chapters, setChapters] = useState<{ from: number; to: number; content: string }[]>([])
   const [origin, setOrigin] = useState<Origin | null>(null)
+  const [staff, setStaff] = useState<StaffMember[]>([])
   const [over, setOver] = useState(false)
   const [frames, setFrames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -187,6 +188,7 @@ function UploadForm() {
       setParts(d.Videos.map((v: any) => ({ key: String(v.cid), name: v.title, filename: v.filename, title: v.title, duration: v.duration, progress: 1 })))
       setChapters(d.chapters ?? [])
       setOrigin(d.origin ?? null)
+      setStaff(d.staff ?? [])
     }).catch(e => { if (live) toastError(e) })
     return () => { live = false }
   }, [aid, me?.mid])
@@ -239,7 +241,7 @@ function UploadForm() {
     setBusy(true)
     try {
       const cover = form.cover
-      const r = await jm.archiveSubmit({ aid: aid ? Number(aid) : undefined, ...form, cover, sub_tid: form.sub_tid || undefined, season_id: form.season_id || undefined, dtime: schedule.on && canSchedule ? dtime : 0, draft: draft ? 1 : undefined, videos: parts.filter((p) => p.filename).map((p) => ({ filename: p.filename!, title: p.title, duration: p.duration })), chapters })
+      const r = await jm.archiveSubmit({ aid: aid ? Number(aid) : undefined, ...form, cover, sub_tid: form.sub_tid || undefined, season_id: form.season_id || undefined, dtime: schedule.on && canSchedule ? dtime : 0, draft: draft ? 1 : undefined, videos: parts.filter((p) => p.filename).map((p) => ({ filename: p.filename!, title: p.title, duration: p.duration })), chapters, staff: origin ? undefined : staff.map(({ mid, title }) => ({ mid, title })) })
       if (r.code) throw new Error(r.message)
       toast(r.data.state === -20 ? '草稿已保存' : r.data.state === 0 ? '发布成功' : r.data.state === -40 ? `已定时，将于 ${dateTimeText(dtime)} 发布` : '已提交，等待审核', 'success')
       if (draft && !aid) nav(`/creator/upload/${r.data.aid}`, { replace: true })
@@ -379,12 +381,62 @@ function UploadForm() {
             <span className="inp" style={{ height: 36, fontSize: 13 }}><select value={form.season_id} onChange={(e) => setForm({ ...form, season_id: +e.target.value })}><option value={0}>不加入合集</option>{(seasons.data ?? []).filter((x: any) => !x.origin).map((x: any) => <option key={x.id} value={x.id}>{x.title}</option>)}</select></span>
           </span>
         </section>}
+        {!origin && <StaffEditor staff={staff} onChange={setStaff} />}
         <button className="up-submit" disabled={busy || parts.some((p) => !p.filename) || (!parts.length && !editing)}>{busy ? <Spinner size={16} /> : editing && archState !== -20 ? '保存修改' : schedule.on && canSchedule ? '定时投稿' : '立即投稿'}</button>
         {canDraft ? <button type="button" className="up-cancel" disabled={busy || parts.some((p) => !p.filename && !p.error)} onClick={() => submit(null, true)}>存草稿</button> : <Link to="/creator/archives" className="up-cancel">取消</Link>}
         <span className="faint" style={{ fontSize: 12, lineHeight: 1.6, textAlign: 'center' }}>{editing && origin ? '修改只保存在 Jumedia' : '投稿后进入审核，通过后对所有人可见'}</span>
       </aside>
     </form>
     </>
+  )
+}
+
+interface StaffMember { mid: number; title: string; name: string; face: string }
+const STAFF_MAX = 10
+
+/** 联合创作: other users credited on the archive, each with an optional role. */
+function StaffEditor({ staff, onChange }: { staff: StaffMember[]; onChange: (list: StaffMember[]) => void }) {
+  const { me } = useSession()
+  const [uid, setUid] = useState('')
+  const [busy, setBusy] = useState(false)
+  const add = async () => {
+    const mid = Number(uid.trim())
+    if (!Number.isInteger(mid) || mid <= 0) return toast('请输入正确的 UID', 'error')
+    if (mid === me?.mid) return toast('不能把自己添加为联合创作者', 'error')
+    if (staff.some((s) => s.mid === mid)) return toast('已经添加过这位创作者', 'error')
+    setBusy(true)
+    try {
+      const d = await juli.card(mid)
+      onChange([...staff, { mid, title: '', name: d.card.name, face: d.card.face }])
+      setUid('')
+    } catch { toast('没有找到这位用户', 'error') } finally { setBusy(false) }
+  }
+  const move = (i: number, d: number) => { const n = [...staff]; const [x] = n.splice(i, 1); n.splice(i + d, 0, x); onChange(n) }
+  return (
+    <section className="sec" style={{ padding: 16, gap: 12 }}>
+      <span className="row between"><span style={{ fontSize: 15, fontWeight: 700 }}>联合创作</span><span className="faint" style={{ fontSize: 12 }}>{staff.length}/{STAFF_MAX}</span></span>
+      <span className="faint" style={{ fontSize: 12, lineHeight: 1.6 }}>联合创作者会显示在视频作者栏，稿件也会出现在他们的个人空间</span>
+      {staff.map((s, i) => (
+        <span key={s.mid} className="staff-edit">
+          <Avatar src={s.face} size={32} />
+          <span className="stack" style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <span className="clamp-1" style={{ fontSize: 13, fontWeight: 600 }}>{s.name}<span className="faint" style={{ fontWeight: 400 }}> UID {s.mid}</span></span>
+            <span className="inp" style={{ height: 30, fontSize: 12 }}><input value={s.title} maxLength={10} placeholder="职能，如剪辑" aria-label={`${s.name}的职能`} onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }} onChange={(e) => onChange(staff.map((x) => (x.mid === s.mid ? { ...x, title: e.target.value } : x)))} /></span>
+          </span>
+          <span className="stack" style={{ gap: 2 }}>
+            <button type="button" className="icon-b" aria-label="上移" disabled={i === 0} onClick={() => move(i, -1)}><Icon name="chevron-up" size={14} /></button>
+            <button type="button" className="icon-b" aria-label="下移" disabled={i === staff.length - 1} onClick={() => move(i, 1)}><Icon name="chevron-down" size={14} /></button>
+          </span>
+          <button type="button" className="icon-b" aria-label={`移除${s.name}`} onClick={() => onChange(staff.filter((x) => x.mid !== s.mid))}><Icon name="x" size={14} /></button>
+        </span>
+      ))}
+      {staff.length < STAFF_MAX && (
+        <span className="row" style={{ gap: 8 }}>
+          <span className="inp grow" style={{ height: 36, fontSize: 13 }}><input inputMode="numeric" value={uid} placeholder="输入对方 UID" aria-label="联合创作者 UID" onChange={(e) => setUid(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} /></span>
+          <button type="button" className="sm-btn" disabled={busy || !uid} onClick={add}>{busy ? <Spinner size={14} /> : '添加'}</button>
+        </span>
+      )}
+    </section>
   )
 }
 

@@ -128,7 +128,8 @@ export function videoItem(v: J): VideoItem | null {
     like: firstNonempty(v.stat?.like, v.like),
     coin: firstNonempty(v.stat?.coin, v.coin),
     favorite: firstNonempty(v.stat?.favorite, v.stat?.fav, v.favorite),
-    badge: firstNonempty(v.badge),
+    // Space lists mark archives made together with other users.
+    badge: firstNonempty(v.badge, v.is_cooperation === true ? '联合创作' : ''),
   }
 }
 

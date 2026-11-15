@@ -448,6 +448,10 @@
 .up-box { padding: 16px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; margin-bottom: 16px; }
 .up-follow { height: 36px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 500; }
 .up-follow.on { background: var(--surface-2); color: var(--text); }
+.up-follow.sm { flex: none; height: 30px; padding: 0 12px; font-size: 13px; gap: 4px; }
+.staff-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.staff-list li { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.staff-role { align-self: flex-start; max-width: 100%; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-2); font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .comments { margin-top: 24px; }
 .comments h2 { font-size: 20px; font-weight: 800; }
 .composer .textarea { border-radius: 10px; }
@@ -628,3 +632,4 @@ button.up-cancel:disabled { opacity: 0.5; cursor: default; }
 .seg3 button { height: 24px; padding: 0 9px; white-space: nowrap; border: 0; border-radius: 6px; background: none; color: var(--text-2); font-size: 12px; cursor: pointer; }
 .seg3 button.on { background: var(--surface); color: var(--brand); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 .mb-go { height: 28px; padding: 0 12px; border-radius: 14px; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap; }
+.staff-edit { display: flex; align-items: center; gap: 10px; min-width: 0; }

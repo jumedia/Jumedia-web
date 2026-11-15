@@ -28,10 +28,29 @@ export function memberJSON(mid: number) {
 
 const totalDuration = (a: Archive) => a.pages.reduce((s, p) => s + p.duration, 0)
 
+/** Participants of a co-created archive whose accounts are still active, in the order the uploader set. */
+export const archiveStaff = (a: Archive) => (a.staff ?? []).filter((s) => s.mid !== a.mid && userById(s.mid)?.status === 0)
+/** Whether `mid` uploaded the archive or takes part in it. */
+export const createdBy = (a: Archive, mid: number) => a.mid === mid || archiveStaff(a).some((s) => s.mid === mid)
+
+/**
+ * `staff` of a co-created archive: the uploader (title UP主) first, then the
+ * participants. Empty for a solo archive, in which case responses omit it.
+ */
+export function staffJSON(a: Archive) {
+  const team = archiveStaff(a)
+  if (!team.length) return []
+  return [{ mid: a.mid, title: 'UP主' }, ...team].map((s) => {
+    const u = owner(s.mid)
+    return { mid: s.mid, title: s.title || '参与创作', name: u.name, face: u.face, follower: followerCount(s.mid) }
+  })
+}
+
 /** `/x/web-interface/view` archive object. */
 export function arcView(a: Archive, extra: Record<string, unknown> = {}) {
   const db = getDB()
   const season = db.collections.find((c) => c.kind === 'season' && c.aids.includes(a.aid))
+  const staff = staffJSON(a)
   return {
     aid: a.aid, bvid: a.bvid, videos: a.pages.length, tid: a.tid, tname: regionName(a.tid), copyright: a.copyright, pic: a.pic, title: a.title,
     pubdate: a.pubdate, ctime: a.ctime, desc: a.desc, state: a.state, duration: totalDuration(a), owner: owner(a.mid),
@@ -40,6 +59,8 @@ export function arcView(a: Archive, extra: Record<string, unknown> = {}) {
     pages: a.pages.map((p, i) => ({ cid: p.cid, page: i + 1, from: 'vupload', part: p.part, duration: p.duration, dimension: { width: 1280, height: 720, rotate: 0 } })),
     ugc_season: season ? ugcSeason(season) : undefined,
     sub_tid: a.sub_tid ?? 0, sub_tname: a.sub_tid ? regionName(a.sub_tid) : '',
+    rights: { is_cooperation: staff.length ? 1 : 0 },
+    ...(staff.length ? { staff } : {}),
     ...extra,
   }
 }
@@ -52,12 +73,18 @@ export function ugcSeason(c: Collection) {
   }
 }
 
-/** Space archive list row (`arc/search` vlist, `series/archives`). */
+/**
+ * Space archive list row (`arc/search` vlist, `series/archives`). A co-created
+ * archive is listed on every participant's space with `is_cooperation` and its
+ * `staff`; `mid`/`author` stay the uploader.
+ */
 export function spaceArc(a: Archive) {
+  const staff = staffJSON(a)
   return {
     aid: a.aid, bvid: a.bvid, title: a.title, pic: a.pic, description: a.desc, play: a.stat.view, video_review: a.stat.danmaku, comment: a.stat.reply,
     length: formatDuration(totalDuration(a)), duration: totalDuration(a), created: a.pubdate, pubdate: a.pubdate, mid: a.mid, author: owner(a.mid).name, typeid: a.tid,
     stat: { view: a.stat.view, danmaku: a.stat.danmaku }, cid: a.pages[0]?.cid,
+    is_cooperation: staff.length > 0, ...(staff.length ? { staff } : {}),
   }
 }
 

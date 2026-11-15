@@ -1,13 +1,13 @@
 import { formatDuration } from '../api/normalize'
 import { Writer } from '../api/protobuf'
 import { idleSync, requestMockDanmaku } from './dandanplay'
-import { type Archive, type ArchiveField, type Banner, type CollectionField, type DataSource, type DB, type LiveRoom, type StreamSource, type User, av2bv, avatarURL, bv2av, getDB, importDemo, LIVE_CHATTER, nextID, putFile, resetDB, resolveMedia, save, seedDanmaku } from './db'
+import { type Archive, type ArchiveField, type ArchiveStaff, type Banner, type CollectionField, type DataSource, type DB, type LiveRoom, type StreamSource, type User, av2bv, avatarURL, bv2av, getDB, importDemo, LIVE_CHATTER, nextID, putFile, resetDB, resolveMedia, save, seedDanmaku } from './db'
 import { sourceNames, type SourceType } from '../lib/dataSource'
 import { browseSource, importSourceDrafts, dataSourceJSON, dsHlsPath, dsPlaylist, sourceBase, forgetSession, mediaFormat, originJSON, parseDsRef, privateHost, probeSource, purgeSource, setSourceFetcher, SourceError, syncSource } from './datasource'
 import { parseDemoPackage } from './emby'
 import { cacheDir, cacheJSON, cacheKeyOf, cachePath, ensureCache, findCache, notReady, retryCache, roomCache, tickCaches, TRANSCODE_HEIGHTS } from './liveCache'
 import { liveWindow, parsePlaylist, passthrough, type Playlist, relayMaster } from './hlsRelay'
-import { archiveById, arcView, compactCount, feedCard, followerCount, followingCount, indexShow, levelInfo, owner, published, regionName, replyJSON, commentVisible, roomCard, seasonBadge, seasonCard, spaceArc, userById, userFace } from './render'
+import { archiveById, archiveStaff, arcView, compactCount, createdBy, feedCard, followerCount, followingCount, indexShow, levelInfo, owner, published, regionName, replyJSON, commentVisible, roomCard, seasonBadge, seasonCard, spaceArc, userById, userFace } from './render'
 
 /**
  * In-browser implementation of the Jumedia API, installed over `fetch` while
@@ -188,6 +188,7 @@ function creatorRow(a: Archive) {
   return {
     Archive: { aid: a.aid, bvid: a.bvid, title: a.title, cover: a.pic, desc: a.desc, tid: a.tid, tname: regionName(a.tid), sub_tid: a.sub_tid ?? 0, tag: a.tag, state: a.state, state_desc: states[a.state] ?? '', reject_reason: a.reason, ptime: a.pubdate, ctime: a.ctime, duration: a.pages.reduce((s, p) => s + p.duration, 0), copyright: a.copyright, source: a.source, dtime: a.dtime ?? 0, no_disturbance: a.no_disturbance ? 1 : 0, no_tv: a.no_tv ? 1 : 0 },
     stat: a.stat, Videos: a.pages.map((p) => ({ cid: p.cid, title: p.part, duration: p.duration, filename: p.media })), chapters: a.chapters,
+    staff: archiveStaff(a).map((s) => ({ mid: s.mid, title: s.title, name: owner(s.mid).name, face: owner(s.mid).face })),
     season_id: getDB().collections.find((x) => x.kind === 'season' && x.aids.includes(a.aid))?.id ?? 0,
     origin: originJSON(getDB(), a),
   }
@@ -560,7 +561,7 @@ const routes: Record<string, Handler> = {
     const related = published(c.db).filter((x) => x.aid !== a.aid).sort((x, y) => (x.tid === a.tid ? -1 : 0) - (y.tid === a.tid ? -1 : 0) || y.stat.view - x.stat.view).slice(0, 12)
     const following = !!c.me && c.db.relations.some((r) => r.mid === c.me!.mid && r.fid === a.mid)
     return {
-      View: arcView(a), Card: { card: { mid: String(u.mid), name: u.uname, face: userFace(u.mid, u.face), sign: u.sign, fans: followerCount(u.mid), attention: followingCount(u.mid), level_info: levelInfo(u) }, following, archive_count: c.db.archives.filter((x) => x.mid === u.mid && x.state === 0).length, follower: followerCount(u.mid), like_num: 0 },
+      View: arcView(a), Card: { card: { mid: String(u.mid), name: u.uname, face: userFace(u.mid, u.face), sign: u.sign, fans: followerCount(u.mid), attention: followingCount(u.mid), level_info: levelInfo(u) }, following, archive_count: c.db.archives.filter((x) => createdBy(x, u.mid) && x.state === 0).length, follower: followerCount(u.mid), like_num: 0 },
       Tags: a.tag.split(',').filter(Boolean).map((t, i) => ({ tag_id: i + 1, tag_name: t })), Related: related.map((x) => arcView(x)),
     }
   },
@@ -887,19 +888,20 @@ const routes: Record<string, Handler> = {
     const u = userById(int(c.p.mid))
     if (!u) return fail(-404, '啥都木有')
     const likes = c.db.archives.filter((a) => a.mid === u.mid).reduce((s, a) => s + a.stat.like, 0)
-    return { card: { mid: String(u.mid), name: u.uname, face: userFace(u.mid, u.face), sign: u.sign, sex: u.sex, fans: followerCount(u.mid), attention: followingCount(u.mid), level_info: levelInfo(u) }, space: { s_img: u.top_photo, l_img: u.top_photo }, following: !!c.me && c.db.relations.some((r) => r.mid === c.me!.mid && r.fid === u.mid), archive_count: c.db.archives.filter((a) => a.mid === u.mid && a.state === 0).length, follower: followerCount(u.mid), like_num: likes }
+    return { card: { mid: String(u.mid), name: u.uname, face: userFace(u.mid, u.face), sign: u.sign, sex: u.sex, fans: followerCount(u.mid), attention: followingCount(u.mid), level_info: levelInfo(u) }, space: { s_img: u.top_photo, l_img: u.top_photo }, following: !!c.me && c.db.relations.some((r) => r.mid === c.me!.mid && r.fid === u.mid), archive_count: c.db.archives.filter((a) => createdBy(a, u.mid) && a.state === 0).length, follower: followerCount(u.mid), like_num: likes }
   },
   '/x/space/wbi/arc/search': (c) => {
     const mid = int(c.p.mid), pn = int(c.p.pn, 1), ps = int(c.p.ps, 30), kw = c.p.keyword ?? ''
     const order = c.p.order
-    const list = c.db.archives.filter((a) => a.mid === mid && a.state === 0 && (!int(c.p.tid) || a.tid === int(c.p.tid)) && (!kw || searchMatch(a.title, kw)))
+    // Includes archives the user co-created with others (联合创作).
+    const list = c.db.archives.filter((a) => createdBy(a, mid) && a.state === 0 && (!int(c.p.tid) || a.tid === int(c.p.tid)) && (!kw || searchMatch(a.title, kw)))
       .sort((a, b) => (order === 'click' ? b.stat.view - a.stat.view : order === 'stow' ? b.stat.favorite - a.stat.favorite : b.pubdate - a.pubdate))
     const tlist = Object.fromEntries([...new Set(list.map((a) => a.tid))].map((tid) => [tid, { tid, name: regionName(tid), count: list.filter((a) => a.tid === tid).length }]))
     return { list: { vlist: page(list, pn, ps).map(spaceArc), tlist }, page: { pn, ps, count: list.length } }
   },
   '/x/v2/space/archive/cursor': (c) => {
     const vmid = int(c.p.vmid), lastAid = int(c.p.aid)
-    const list = c.db.archives.filter((a) => a.mid === vmid && a.state === 0).sort((a, b) => (c.p.order === 'click' ? b.stat.view - a.stat.view : b.pubdate - a.pubdate))
+    const list = c.db.archives.filter((a) => createdBy(a, vmid) && a.state === 0).sort((a, b) => (c.p.order === 'click' ? b.stat.view - a.stat.view : b.pubdate - a.pubdate))
     const start = lastAid ? list.findIndex((a) => a.aid === lastAid) + 1 : 0
     const items = list.slice(start, start + 20)
     return { item: items.map((a) => ({ ...spaceArc(a), param: String(a.aid), goto: 'av', cover: a.pic, ctime: a.pubdate })), has_next: start + 20 < list.length, count: list.length }
@@ -2047,13 +2049,39 @@ function submitArchive(c: Ctx) {
   return r
 }
 
+/**
+ * `staff` on add/edit: JSON `[{mid, title}]` of the participants, the uploader
+ * excluded, in display order. Absent keeps the current list; `[]` clears it.
+ * Repeated users keep their first entry.
+ */
+function staffInput(c: Ctx, u: User, existing?: Archive): ArchiveStaff[] {
+  if (c.p.staff === undefined) return existing?.staff ?? []
+  let raw: unknown
+  try { raw = JSON.parse(c.p.staff || '[]') } catch { fail(-400, '联合创作者格式不正确') }
+  if (!Array.isArray(raw)) fail(-400, '联合创作者格式不正确')
+  const list: ArchiveStaff[] = []
+  for (const x of raw as Record<string, unknown>[]) {
+    const mid = Number(x?.mid)
+    if (!Number.isInteger(mid) || mid <= 0) fail(-400, '联合创作者格式不正确')
+    if (mid === u.mid) fail(-400, '不能把自己添加为联合创作者')
+    if (userById(mid)?.status !== 0) fail(-400, `用户 ${mid} 不存在或已被封禁`)
+    const title = String(x.title ?? '').trim()
+    if ([...title].length > 10) fail(-400, '职能最多 10 个字')
+    if (!list.some((s) => s.mid === mid)) list.push({ mid, title })
+  }
+  if (list.length > 10) fail(-400, '联合创作者最多 10 位')
+  return list
+}
+
 function saveArchive(c: Ctx, u: User, existing: Archive | undefined, over: { title: string; state: number; pubdate: number; dtime?: number }) {
+  const staff = staffInput(c, u, existing)
   const videos = JSON.parse(c.p.videos || '[]') as { filename: string; title: string; duration: number }[]
   const oldPages = existing?.pages ?? []
   const pages = videos.map((v) => ({ cid: oldPages.find((p) => p.media === v.filename)?.cid ?? nextID(), part: v.title || over.title, duration: Math.max(1, Math.round(v.duration || 1)), media: v.filename }))
   const fields = {
     title: over.title, desc: c.p.desc ?? '', tid: int(c.p.tid), sub_tid: int(c.p.sub_tid), tag: c.p.tag ?? '', pic: c.p.cover || '', copyright: int(c.p.copyright, 1), source: c.p.source ?? '',
     pages, chapters: JSON.parse(c.p.chapters || '[]'), state: over.state, reason: '', dtime: over.dtime, no_disturbance: truthy(c.p.no_disturbance), no_tv: truthy(c.p.no_tv),
+    staff,
   }
   let a = existing
   if (a) Object.assign(a, fields, over.pubdate ? { pubdate: over.pubdate } : {})
